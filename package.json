@@ -1,0 +1,21 @@
+{
+  "name": "node-http-server",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Node.js example server starter project",
+  "scripts": {
+    "build:client": "esbuild src/index.js --bundle --outfile=public/bundle.js --loader:.js=jsx",
+    "build:server": "esbuild src/server.jsx --bundle --outfile=index.js --platform=node --target=node16.8 --format=esm  --banner:js='import { createRequire as topLevelCreateRequire } from \"module\";const require = topLevelCreateRequire(import.meta.url);'",
+    "build": "npm run build:client && npm run build:server",
+    "start:debug": "neru debug",
+    "start": "neru deploy"
+  },
+  "dependencies": {
+    "esbuild": "^0.14.13",
+    "express": "4.17.2",
+    "neru-alpha": "^1.0.0",
+    "react": "17.0.2",
+    "react-dom": "17.0.2"
+  },
+  "keywords": []
+}
