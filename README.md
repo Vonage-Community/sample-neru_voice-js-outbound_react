@@ -32,7 +32,7 @@ This will create a `neru.yml` file for you. In that file add the linked number u
 
 ```yml
 project:
-    name: vapi-outbound-static-app
+    name: $YOUR_PROJECT_NAME
 instance:
     name: dev
     runtime: nodejs
