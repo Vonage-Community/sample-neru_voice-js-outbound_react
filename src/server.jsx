@@ -3,20 +3,24 @@ import fs from "fs";
 
 import React from "react";
 import ReactDOMServer from "react-dom/server";
-import express from "express";
 
 import App from "./App";
 
 import { neru, Voice } from 'neru-alpha';
-import { dirname } from 'path';
-import { fileURLToPath } from 'url';
+import express from 'express';
 
-const router = neru.Router();
+const app = express();
+const port = process.env.NERU_APP_PORT;
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-router.use(express.static(path.join(__dirname, 'public')));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public'));
 
-router.get("/", (req, res) => {
+app.get('/_/health', async (req, res) => {
+  res.sendStatus(200);
+});
+
+app.get("/", (req, res) => {
   fs.readFile(path.resolve("./public/index.html"), "utf8", (err, data) => {
     if (err) {
       console.error(err);
@@ -32,7 +36,7 @@ router.get("/", (req, res) => {
   });
 });
 
-router.post('/call', async (req, res, next) => {
+app.post('/call', async (req, res, next) => {
   try {
       const session = neru.createSession();
       const voice = new Voice(session);
@@ -62,10 +66,12 @@ router.post('/call', async (req, res, next) => {
   }
 });
 
-router.post('/onEvent', async (req, res) => {
+app.post('/onEvent', async (req, res) => {
   console.log('event status is: ', req.body.status);
   console.log('event direction is: ', req.body.direction);
   res.sendStatus(200);
 });
 
-export { router };
+app.listen(port, () => {
+  console.log(`Example app listening on port ${port}`)
+});

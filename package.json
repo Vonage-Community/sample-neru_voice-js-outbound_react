@@ -1,5 +1,5 @@
 {
-  "name": "node-http-server",
+  "name": "neru-react-outbound",
   "version": "1.0.0",
   "type": "module",
   "description": "Node.js example server starter project",
@@ -13,7 +13,7 @@
   "dependencies": {
     "esbuild": "^0.14.13",
     "express": "4.17.2",
-    "neru-alpha": "^1.0.0",
+    "neru-alpha": "2.4.0",
     "react": "17.0.2",
     "react-dom": "17.0.2"
   },
