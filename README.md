@@ -38,10 +38,9 @@ instance:
     runtime: nodejs
     region: aws.euw1
     application-id: $YOUR_VONAGE_APPLICATION_ID
-    configurations:
-        contact:
-            number: "$YOUR_VONAGE_NUMBER"
-            type: phone
+    environment:
+        - name: VONAGE_NUMBER
+          value: "$YOUR_VONAGE_NUMBER"
 
 ```
 

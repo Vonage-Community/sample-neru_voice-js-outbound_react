@@ -6570,6 +6570,18 @@ var require_enhanceError = __commonJS({
   }
 });
 
+// node_modules/axios/lib/defaults/transitional.js
+var require_transitional = __commonJS({
+  "node_modules/axios/lib/defaults/transitional.js"(exports2, module2) {
+    "use strict";
+    module2.exports = {
+      silentJSONParsing: true,
+      forcedJSONParsing: true,
+      clarifyTimeoutError: false
+    };
+  }
+});
+
 // node_modules/axios/lib/core/createError.js
 var require_createError = __commonJS({
   "node_modules/axios/lib/core/createError.js"(exports2, module2) {
@@ -6798,7 +6810,7 @@ var require_xhr = __commonJS({
     var parseHeaders = require_parseHeaders();
     var isURLSameOrigin = require_isURLSameOrigin();
     var createError = require_createError();
-    var defaults = require_defaults();
+    var transitionalDefaults = require_transitional();
     var Cancel = require_Cancel();
     module2.exports = function xhrAdapter(config2) {
       return new Promise(function dispatchXhrRequest(resolve, reject) {
@@ -6875,7 +6887,7 @@ var require_xhr = __commonJS({
         };
         request.ontimeout = function handleTimeout() {
           var timeoutErrorMessage = config2.timeout ? "timeout of " + config2.timeout + "ms exceeded" : "timeout exceeded";
-          var transitional = config2.transitional || defaults.transitional;
+          var transitional = config2.transitional || transitionalDefaults;
           if (config2.timeoutErrorMessage) {
             timeoutErrorMessage = config2.timeoutErrorMessage;
           }
@@ -7569,15 +7581,15 @@ var require_follow_redirects = __commonJS({
         return;
       }
       if (this._options.agents) {
-        var scheme = protocol.substr(0, protocol.length - 1);
+        var scheme = protocol.slice(0, -1);
         this._options.agent = this._options.agents[scheme];
       }
       var request = this._currentRequest = nativeProtocol.request(this._options, this._onNativeResponse);
-      this._currentUrl = url.format(this._options);
       request._redirectable = this;
-      for (var e = 0; e < events.length; e++) {
-        request.on(events[e], eventHandlers[events[e]]);
+      for (var event of events) {
+        request.on(event, eventHandlers[event]);
       }
+      this._currentUrl = /^\//.test(this._options.path) ? url.format(this._options) : this._currentUrl = this._options.path;
       if (this._isRedirect) {
         var i = 0;
         var self = this;
@@ -7621,6 +7633,14 @@ var require_follow_redirects = __commonJS({
         this.emit("error", new TooManyRedirectsError());
         return;
       }
+      var requestHeaders;
+      var beforeRedirect = this._options.beforeRedirect;
+      if (beforeRedirect) {
+        requestHeaders = Object.assign({
+          Host: response.req.getHeader("host")
+        }, this._options.headers);
+      }
+      var method = this._options.method;
       if ((statusCode === 301 || statusCode === 302) && this._options.method === "POST" || statusCode === 303 && !/^(?:GET|HEAD)$/.test(this._options.method)) {
         this._options.method = "GET";
         this._requestBodyBuffers = [];
@@ -7644,10 +7664,18 @@ var require_follow_redirects = __commonJS({
       if (redirectUrlParts.protocol !== currentUrlParts.protocol && redirectUrlParts.protocol !== "https:" || redirectUrlParts.host !== currentHost && !isSubdomain(redirectUrlParts.host, currentHost)) {
         removeMatchingHeaders(/^(?:authorization|cookie)$/i, this._options.headers);
       }
-      if (typeof this._options.beforeRedirect === "function") {
-        var responseDetails = { headers: response.headers };
+      if (typeof beforeRedirect === "function") {
+        var responseDetails = {
+          headers: response.headers,
+          statusCode
+        };
+        var requestDetails = {
+          url: currentUrl,
+          method,
+          headers: requestHeaders
+        };
         try {
-          this._options.beforeRedirect.call(null, this._options, responseDetails);
+          beforeRedirect(this._options, responseDetails, requestDetails);
         } catch (err) {
           this.emit("error", err);
           return;
@@ -7754,8 +7782,8 @@ var require_follow_redirects = __commonJS({
       return CustomError;
     }
     function abortRequest(request) {
-      for (var e = 0; e < events.length; e++) {
-        request.removeListener(events[e], eventHandlers[events[e]]);
+      for (var event of events) {
+        request.removeListener(event, eventHandlers[event]);
       }
       request.on("error", noop);
       request.abort();
@@ -7773,7 +7801,7 @@ var require_follow_redirects = __commonJS({
 var require_data = __commonJS({
   "node_modules/axios/lib/env/data.js"(exports2, module2) {
     module2.exports = {
-      "version": "0.25.0"
+      "version": "0.26.1"
     };
   }
 });
@@ -7795,7 +7823,7 @@ var require_http = __commonJS({
     var VERSION = require_data().version;
     var createError = require_createError();
     var enhanceError = require_enhanceError();
-    var defaults = require_defaults();
+    var transitionalDefaults = require_transitional();
     var Cancel = require_Cancel();
     var isHttps = /https:?/;
     function setProxy(options, proxy, location) {
@@ -7882,6 +7910,15 @@ var require_http = __commonJS({
         }
         var isHttpsRequest = isHttps.test(protocol);
         var agent = isHttpsRequest ? config2.httpsAgent : config2.httpAgent;
+        try {
+          buildURL(parsed.path, config2.params, config2.paramsSerializer).replace(/^\?/, "");
+        } catch (err) {
+          var customErr = new Error(err.message);
+          customErr.config = config2;
+          customErr.url = config2.url;
+          customErr.exists = true;
+          reject(customErr);
+        }
         var options = {
           path: buildURL(parsed.path, config2.params, config2.paramsSerializer).replace(/^\?/, ""),
           method: config2.method.toUpperCase(),
@@ -8041,8 +8078,14 @@ var require_http = __commonJS({
           }
           req.setTimeout(timeout, function handleRequestTimeout() {
             req.abort();
-            var transitional = config2.transitional || defaults.transitional;
-            reject(createError("timeout of " + timeout + "ms exceeded", config2, transitional.clarifyTimeoutError ? "ETIMEDOUT" : "ECONNABORTED", req));
+            var timeoutErrorMessage = "";
+            if (config2.timeoutErrorMessage) {
+              timeoutErrorMessage = config2.timeoutErrorMessage;
+            } else {
+              timeoutErrorMessage = "timeout of " + config2.timeout + "ms exceeded";
+            }
+            var transitional = config2.transitional || transitionalDefaults;
+            reject(createError(timeoutErrorMessage, config2, transitional.clarifyTimeoutError ? "ETIMEDOUT" : "ECONNABORTED", req));
           });
         }
         if (config2.cancelToken || config2.signal) {
@@ -8069,13 +8112,14 @@ var require_http = __commonJS({
   }
 });
 
-// node_modules/axios/lib/defaults.js
+// node_modules/axios/lib/defaults/index.js
 var require_defaults = __commonJS({
-  "node_modules/axios/lib/defaults.js"(exports2, module2) {
+  "node_modules/axios/lib/defaults/index.js"(exports2, module2) {
     "use strict";
     var utils = require_utils();
     var normalizeHeaderName = require_normalizeHeaderName();
     var enhanceError = require_enhanceError();
+    var transitionalDefaults = require_transitional();
     var DEFAULT_CONTENT_TYPE = {
       "Content-Type": "application/x-www-form-urlencoded"
     };
@@ -8107,11 +8151,7 @@ var require_defaults = __commonJS({
       return (encoder || JSON.stringify)(rawValue);
     }
     var defaults = {
-      transitional: {
-        silentJSONParsing: true,
-        forcedJSONParsing: true,
-        clarifyTimeoutError: false
-      },
+      transitional: transitionalDefaults,
       adapter: getDefaultAdapter(),
       transformRequest: [function transformRequest(data, headers) {
         normalizeHeaderName(headers, "Accept");
@@ -8407,9 +8447,6 @@ var require_Axios = __commonJS({
       } else {
         config2 = configOrUrl || {};
       }
-      if (!config2.url) {
-        throw new Error("Provided config url is not valid");
-      }
       config2 = mergeConfig(this.defaults, config2);
       if (config2.method) {
         config2.method = config2.method.toLowerCase();
@@ -8472,9 +8509,6 @@ var require_Axios = __commonJS({
       return promise;
     };
     Axios.prototype.getUri = function getUri(config2) {
-      if (!config2.url) {
-        throw new Error("Provided config url is not valid");
-      }
       config2 = mergeConfig(this.defaults, config2);
       return buildURL(config2.url, config2.params, config2.paramsSerializer).replace(/^\?/, "");
     };
@@ -31891,6 +31925,8 @@ var NeruProviders;
   NeruProviders2["Scheduler"] = "vonage-scheduler";
   NeruProviders2["VonageAI"] = "vonage-overai";
   NeruProviders2["Assets"] = "Assets";
+  NeruProviders2["Meetings"] = "vonage-meetings";
+  NeruProviders2["Numbers"] = "vonage-numbers";
 })(NeruProviders || (NeruProviders = {}));
 var Actions;
 (function(Actions2) {
@@ -32447,7 +32483,7 @@ var Session = function() {
             if (this.config.debug) {
               this.bridge.log(logAction);
             }
-            return [4, this.commandService.executeCommand(this.config.getExecutionUrl(NeruProviders.LogPublisher), logAction)];
+            return [4, this.commandService.executeCommand(this.config.getExecutionUrl(NeruProviders.LogPublisher), logAction, this.constructRequestHeaders())];
           case 1:
             _a.sent();
             return [3, 3];
@@ -33867,12 +33903,12 @@ var Channel = function() {
   };
   return Channel2;
 }();
-var AcceptInoundCallBody = function() {
-  function AcceptInoundCallBody2(user, channel) {
+var AcceptInboundCallBody = function() {
+  function AcceptInboundCallBody2(user, channel) {
     this.user = user;
     this.channel = channel;
   }
-  return AcceptInoundCallBody2;
+  return AcceptInboundCallBody2;
 }();
 var AcceptInboundCallEvent = function() {
   function AcceptInboundCallEvent2() {
@@ -34315,6 +34351,533 @@ var VonageAI = function() {
   return VonageAI2;
 }();
 
+// node_modules/neru-alpha/dist/esm/providers/meetings.js
+var RoomType;
+(function(RoomType2) {
+  RoomType2["instant"] = "instant";
+  RoomType2["longTerm"] = "long_term";
+})(RoomType || (RoomType = {}));
+var RecordingOptions = function() {
+  function RecordingOptions2() {
+  }
+  return RecordingOptions2;
+}();
+var CreateRoomPayload = function() {
+  function CreateRoomPayload2(display_name, metadata, type, expires_at, expire_after_use, recording_options) {
+    if (metadata === void 0) {
+      metadata = null;
+    }
+    if (type === void 0) {
+      type = null;
+    }
+    if (expires_at === void 0) {
+      expires_at = null;
+    }
+    if (expire_after_use === void 0) {
+      expire_after_use = null;
+    }
+    if (recording_options === void 0) {
+      recording_options = null;
+    }
+    this.display_name = display_name;
+    this.metadata = metadata;
+    this.type = type;
+    this.expires_at = expires_at;
+    this.expire_after_use = expire_after_use;
+    this.recording_options = recording_options;
+  }
+  return CreateRoomPayload2;
+}();
+var UpdateRoomPayload = function() {
+  function UpdateRoomPayload2(update_details) {
+    this.update_details = update_details;
+  }
+  return UpdateRoomPayload2;
+}();
+var UpdateRoomDetails = function() {
+  function UpdateRoomDetails2(expires_at, expire_after_use) {
+    this.expires_at = expires_at;
+    this.expire_after_use = expire_after_use;
+  }
+  return UpdateRoomDetails2;
+}();
+var Meetings = function() {
+  function Meetings2(session) {
+    this.session = session;
+    this.vonageAPI = new VonageAPI(this.session);
+    this.baseUrl = "https://api-eu.vonage.com/beta/meetings";
+  }
+  Meetings2.prototype.getRoom = function(roomId) {
+    var url = "".concat(this.baseUrl, "/rooms/").concat(roomId);
+    var method = "GET";
+    return this.vonageAPI.invoke(url, method, null);
+  };
+  Meetings2.prototype.getRooms = function(paginationUrl) {
+    var url;
+    if (paginationUrl != null) {
+      url = paginationUrl;
+    } else {
+      url = "".concat(this.baseUrl, "/rooms");
+    }
+    var method = "GET";
+    return this.vonageAPI.invoke(url, method, null);
+  };
+  Meetings2.prototype.createRoom = function(createRoomPayload) {
+    var url = "".concat(this.baseUrl, "/rooms");
+    var method = "POST";
+    return this.vonageAPI.invoke(url, method, createRoomPayload);
+  };
+  Meetings2.prototype.updateRoom = function(roomId, expiry, expireAfterUse) {
+    var details = new UpdateRoomDetails(expiry, expireAfterUse);
+    var payload = new UpdateRoomPayload(details);
+    var url = "".concat(this.baseUrl, "/rooms/").concat(roomId);
+    var method = "PATCH";
+    return this.vonageAPI.invoke(url, method, payload);
+  };
+  Meetings2.prototype.deleteRoom = function(roomId) {
+    var url = "".concat(this.baseUrl, "/rooms/").concat(roomId);
+    var method = "DELETE";
+    return this.vonageAPI.invoke(url, method, {});
+  };
+  return Meetings2;
+}();
+
+// node_modules/neru-alpha/dist/esm/providers/numbers.js
+var NumberFeature;
+(function(NumberFeature2) {
+  NumberFeature2["sms"] = "SMS";
+  NumberFeature2["voice"] = "VOICE";
+  NumberFeature2["mms"] = "MMS";
+})(NumberFeature || (NumberFeature = {}));
+var GetNumbersOptions = function() {
+  function GetNumbersOptions2() {
+  }
+  return GetNumbersOptions2;
+}();
+var SearchNumbersOptions = function() {
+  function SearchNumbersOptions2() {
+  }
+  return SearchNumbersOptions2;
+}();
+var NumberOptions = function() {
+  function NumberOptions2() {
+  }
+  return NumberOptions2;
+}();
+var UpdateNumberOptions = function() {
+  function UpdateNumberOptions2() {
+  }
+  return UpdateNumberOptions2;
+}();
+var Numbers = function() {
+  function Numbers2(session) {
+    this.session = session;
+    this.vonageAPI = new VonageAPI(this.session);
+    this.baseUrl = "https://rest.nexmo.com/number";
+    this.accountUrl = "https://rest.nexmo.com/account/numbers";
+  }
+  Numbers2.prototype.getNumbers = function(apiKey, apiSecret, getNumberOptions) {
+    var url = "".concat(this.accountUrl, "?api_key=").concat(apiKey, "&api_secret=").concat(apiSecret);
+    if (getNumberOptions != null) {
+      url = this.buildUrl(url, getNumberOptions);
+    }
+    var method = "GET";
+    return this.vonageAPI.invoke(url, method, null);
+  };
+  Numbers2.prototype.searchNumbers = function(apiKey, apiSecret, searchNumberOptions) {
+    var url = "".concat(this.baseUrl, "/search?api_key=").concat(apiKey, "&api_secret=").concat(apiSecret);
+    url = this.buildUrl(url, searchNumberOptions);
+    var method = "GET";
+    return this.vonageAPI.invoke(url, method, null);
+  };
+  Numbers2.prototype.buyNumber = function(apiKey, apiSecret, numberOptions) {
+    var url = "".concat(this.baseUrl, "/buy?api_key=").concat(apiKey, "&api_secret=").concat(apiSecret);
+    url = this.buildUrl(url, numberOptions);
+    var method = "POST";
+    return this.vonageAPI.invoke(url, method, null);
+  };
+  Numbers2.prototype.cancelNumber = function(apiKey, apiSecret, numberOptions) {
+    var url = "".concat(this.baseUrl, "/cancel?api_key=").concat(apiKey, "&api_secret=").concat(apiSecret);
+    url = this.buildUrl(url, numberOptions);
+    var method = "POST";
+    return this.vonageAPI.invoke(url, method, null);
+  };
+  Numbers2.prototype.updateNumber = function(apiKey, apiSecret, updateNumberOptions) {
+    var url = "".concat(this.baseUrl, "/update?api_key=").concat(apiKey, "&api_secret=").concat(apiSecret);
+    url = this.buildUrl(url, updateNumberOptions);
+    var method = "POST";
+    return this.vonageAPI.invoke(url, method, null);
+  };
+  Numbers2.prototype.buildUrl = function(baseUrl, options) {
+    var queryString = Object.keys(options).map(function(key) {
+      return key + "=" + options[key];
+    }).join("&");
+    if (queryString && queryString.length > 0) {
+      return "".concat(baseUrl, "&").concat(queryString);
+    }
+    return baseUrl;
+  };
+  return Numbers2;
+}();
+
+// node_modules/neru-alpha/dist/esm/webhookEvents/baseEvent.js
+var WebhookEventTypes;
+(function(WebhookEventTypes2) {
+  WebhookEventTypes2["text"] = "text";
+  WebhookEventTypes2["image"] = "image";
+  WebhookEventTypes2["video"] = "video";
+  WebhookEventTypes2["file"] = "file";
+  WebhookEventTypes2["audio"] = "audio";
+  WebhookEventTypes2["reply"] = "reply";
+  WebhookEventTypes2["unsupported"] = "unsupported";
+  WebhookEventTypes2["vcard"] = "vcard";
+})(WebhookEventTypes || (WebhookEventTypes = {}));
+var UrlObject = function() {
+  function UrlObject2() {
+  }
+  return UrlObject2;
+}();
+var BaseEvent = function() {
+  function BaseEvent2() {
+  }
+  return BaseEvent2;
+}();
+
+// node_modules/neru-alpha/dist/esm/webhookEvents/messangerEvent.js
+var __extends2 = function() {
+  var extendStatics = function(d, b) {
+    extendStatics = Object.setPrototypeOf || { __proto__: [] } instanceof Array && function(d2, b2) {
+      d2.__proto__ = b2;
+    } || function(d2, b2) {
+      for (var p in b2)
+        if (Object.prototype.hasOwnProperty.call(b2, p))
+          d2[p] = b2[p];
+    };
+    return extendStatics(d, b);
+  };
+  return function(d, b) {
+    if (typeof b !== "function" && b !== null)
+      throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
+    extendStatics(d, b);
+    function __() {
+      this.constructor = d;
+    }
+    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+  };
+}();
+var MessengerEvent = function(_super) {
+  __extends2(MessengerEvent2, _super);
+  function MessengerEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.channel = "messenger";
+    return _this;
+  }
+  return MessengerEvent2;
+}(BaseEvent);
+var MessengerTextEvent = function(_super) {
+  __extends2(MessengerTextEvent2, _super);
+  function MessengerTextEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.text;
+    return _this;
+  }
+  return MessengerTextEvent2;
+}(MessengerEvent);
+var MessengerImageEvent = function(_super) {
+  __extends2(MessengerImageEvent2, _super);
+  function MessengerImageEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.text;
+    return _this;
+  }
+  return MessengerImageEvent2;
+}(MessengerEvent);
+var MessengerVideoEvent = function(_super) {
+  __extends2(MessengerVideoEvent2, _super);
+  function MessengerVideoEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.video;
+    return _this;
+  }
+  return MessengerVideoEvent2;
+}(MessengerEvent);
+var MessengerFileEvent = function(_super) {
+  __extends2(MessengerFileEvent2, _super);
+  function MessengerFileEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.file;
+    return _this;
+  }
+  return MessengerFileEvent2;
+}(MessengerEvent);
+var MessengerAudioEvent = function(_super) {
+  __extends2(MessengerAudioEvent2, _super);
+  function MessengerAudioEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.audio;
+    return _this;
+  }
+  return MessengerAudioEvent2;
+}(MessengerEvent);
+var MessengerUnsupportedEvent = function(_super) {
+  __extends2(MessengerUnsupportedEvent2, _super);
+  function MessengerUnsupportedEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.unsupported;
+    return _this;
+  }
+  return MessengerUnsupportedEvent2;
+}(MessengerEvent);
+
+// node_modules/neru-alpha/dist/esm/webhookEvents/mmsEvent.js
+var __extends3 = function() {
+  var extendStatics = function(d, b) {
+    extendStatics = Object.setPrototypeOf || { __proto__: [] } instanceof Array && function(d2, b2) {
+      d2.__proto__ = b2;
+    } || function(d2, b2) {
+      for (var p in b2)
+        if (Object.prototype.hasOwnProperty.call(b2, p))
+          d2[p] = b2[p];
+    };
+    return extendStatics(d, b);
+  };
+  return function(d, b) {
+    if (typeof b !== "function" && b !== null)
+      throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
+    extendStatics(d, b);
+    function __() {
+      this.constructor = d;
+    }
+    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+  };
+}();
+var MMSEvent = function(_super) {
+  __extends3(MMSEvent2, _super);
+  function MMSEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.channel = "mms";
+    return _this;
+  }
+  return MMSEvent2;
+}(BaseEvent);
+var MMSImageEvent = function(_super) {
+  __extends3(MMSImageEvent2, _super);
+  function MMSImageEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.image;
+    return _this;
+  }
+  return MMSImageEvent2;
+}(MMSEvent);
+var MMSVCardEvent = function(_super) {
+  __extends3(MMSVCardEvent2, _super);
+  function MMSVCardEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.vcard;
+    return _this;
+  }
+  return MMSVCardEvent2;
+}(MMSEvent);
+var MMSAudioEvent = function(_super) {
+  __extends3(MMSAudioEvent2, _super);
+  function MMSAudioEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.audio;
+    return _this;
+  }
+  return MMSAudioEvent2;
+}(MMSEvent);
+var MMSVideoEvent = function(_super) {
+  __extends3(MMSVideoEvent2, _super);
+  function MMSVideoEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.video;
+    return _this;
+  }
+  return MMSVideoEvent2;
+}(MMSEvent);
+
+// node_modules/neru-alpha/dist/esm/webhookEvents/smsEvent.js
+var __extends4 = function() {
+  var extendStatics = function(d, b) {
+    extendStatics = Object.setPrototypeOf || { __proto__: [] } instanceof Array && function(d2, b2) {
+      d2.__proto__ = b2;
+    } || function(d2, b2) {
+      for (var p in b2)
+        if (Object.prototype.hasOwnProperty.call(b2, p))
+          d2[p] = b2[p];
+    };
+    return extendStatics(d, b);
+  };
+  return function(d, b) {
+    if (typeof b !== "function" && b !== null)
+      throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
+    extendStatics(d, b);
+    function __() {
+      this.constructor = d;
+    }
+    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+  };
+}();
+var SMSMetadata = function() {
+  function SMSMetadata2() {
+  }
+  return SMSMetadata2;
+}();
+var SMSUsage = function() {
+  function SMSUsage2() {
+  }
+  return SMSUsage2;
+}();
+var SmsEvent = function(_super) {
+  __extends4(SmsEvent2, _super);
+  function SmsEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.channel = "sms";
+    return _this;
+  }
+  return SmsEvent2;
+}(BaseEvent);
+
+// node_modules/neru-alpha/dist/esm/webhookEvents/viberEvent.js
+var __extends5 = function() {
+  var extendStatics = function(d, b) {
+    extendStatics = Object.setPrototypeOf || { __proto__: [] } instanceof Array && function(d2, b2) {
+      d2.__proto__ = b2;
+    } || function(d2, b2) {
+      for (var p in b2)
+        if (Object.prototype.hasOwnProperty.call(b2, p))
+          d2[p] = b2[p];
+    };
+    return extendStatics(d, b);
+  };
+  return function(d, b) {
+    if (typeof b !== "function" && b !== null)
+      throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
+    extendStatics(d, b);
+    function __() {
+      this.constructor = d;
+    }
+    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+  };
+}();
+var ViberEvent = function(_super) {
+  __extends5(ViberEvent2, _super);
+  function ViberEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.text;
+    return _this;
+  }
+  return ViberEvent2;
+}(BaseEvent);
+
+// node_modules/neru-alpha/dist/esm/webhookEvents/whatsappEvent.js
+var __extends6 = function() {
+  var extendStatics = function(d, b) {
+    extendStatics = Object.setPrototypeOf || { __proto__: [] } instanceof Array && function(d2, b2) {
+      d2.__proto__ = b2;
+    } || function(d2, b2) {
+      for (var p in b2)
+        if (Object.prototype.hasOwnProperty.call(b2, p))
+          d2[p] = b2[p];
+    };
+    return extendStatics(d, b);
+  };
+  return function(d, b) {
+    if (typeof b !== "function" && b !== null)
+      throw new TypeError("Class extends value " + String(b) + " is not a constructor or null");
+    extendStatics(d, b);
+    function __() {
+      this.constructor = d;
+    }
+    d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+  };
+}();
+var ReplyObject = function() {
+  function ReplyObject2() {
+  }
+  return ReplyObject2;
+}();
+var ProfileName = function() {
+  function ProfileName2() {
+  }
+  return ProfileName2;
+}();
+var MessageEventContext = function() {
+  function MessageEventContext2() {
+  }
+  return MessageEventContext2;
+}();
+var WhatsappEvent = function(_super) {
+  __extends6(WhatsappEvent2, _super);
+  function WhatsappEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.channel = "whatsapp";
+    return _this;
+  }
+  return WhatsappEvent2;
+}(BaseEvent);
+var WhatsappTextEvent = function() {
+  function WhatsappTextEvent2() {
+    this.message_type = WebhookEventTypes.text;
+  }
+  return WhatsappTextEvent2;
+}();
+var WhatsappImageEvent = function(_super) {
+  __extends6(WhatsappImageEvent2, _super);
+  function WhatsappImageEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.image;
+    return _this;
+  }
+  return WhatsappImageEvent2;
+}(WhatsappEvent);
+var WhatsappVideoEvent = function(_super) {
+  __extends6(WhatsappVideoEvent2, _super);
+  function WhatsappVideoEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.video;
+    return _this;
+  }
+  return WhatsappVideoEvent2;
+}(WhatsappEvent);
+var WhatsappFileEvent = function(_super) {
+  __extends6(WhatsappFileEvent2, _super);
+  function WhatsappFileEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.file;
+    return _this;
+  }
+  return WhatsappFileEvent2;
+}(WhatsappEvent);
+var WhatsappAudioEvent = function(_super) {
+  __extends6(WhatsappAudioEvent2, _super);
+  function WhatsappAudioEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.audio;
+    return _this;
+  }
+  return WhatsappAudioEvent2;
+}(WhatsappEvent);
+var WhatsappReplyEvent = function(_super) {
+  __extends6(WhatsappReplyEvent2, _super);
+  function WhatsappReplyEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.reply;
+    return _this;
+  }
+  return WhatsappReplyEvent2;
+}(WhatsappEvent);
+var WhatsappUnsupportedEvent = function(_super) {
+  __extends6(WhatsappUnsupportedEvent2, _super);
+  function WhatsappUnsupportedEvent2() {
+    var _this = _super !== null && _super.apply(this, arguments) || this;
+    _this.message_type = WebhookEventTypes.unsupported;
+    return _this;
+  }
+  return WhatsappUnsupportedEvent2;
+}(WhatsappEvent);
+
 // node_modules/neru-alpha/dist/esm/neru.js
 var LogContext = function() {
   function LogContext2(actionName, payload, result) {
@@ -34482,7 +35045,7 @@ app.post("/call", async (req, res, next) => {
   try {
     const session = neru.createSession();
     const voice = new Voice(session);
-    const vonageNumber = JSON.parse(process.env.NERU_CONFIGURATIONS).contact;
+    const vonageNumber = { type: "phone", number: process.env.VONAGE_NUMBER };
     const to = { type: "phone", number: req.body.number };
     const response = await voice.vapiCreateCall(vonageNumber, [to], [
       {
