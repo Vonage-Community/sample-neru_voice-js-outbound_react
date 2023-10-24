@@ -1,5 +1,7 @@
 # Making an Outbound Call Using a Server Side Rendered React Site, NeRu and the Voice API
 
+## ❗❗❗ **This repo is now deprecated. Check the [Vonage Developer Blog](https://developer.vonage.com/en/blog) for more blog posts and tutorials. For more sample Vonage projects, check the [Vonage Community GitHub repo](https://github.com/Vonage-Community).**
+
 This project shows how to use NeRu with a server side rendered react website, and make an outbound call with the Voice API.
 
 ![The static site](site.png)
